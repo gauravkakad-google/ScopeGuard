@@ -1,0 +1,34 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "scopeguard",
+  "displayName": "ScopeGuard — Google Cloud IAM Remediation & Least-Privilege Co-Pilot",
+  "version": "2.1.0",
+  "description": "Admin & Developer Google Cloud IAM Remediation Co-Pilot that complements Google Cloud Security Command Center (SCC) and Wiz: 11 modular skills turning SCC/Wiz findings and Active Assist signals into replay-verified Terraform HCL patches, disjoint custom roles (Model A/B), developer 403 minimal-fix debugging, 90-day Audit Log breakglass simulation, CIS/SOC2/ISO/PCI compliance evidence, PAM JIT entitlements, Workload Identity Federation, auto-patching GitOps PR guardrails, IAM v2 Deny Policies, and Org Hierarchy auditing — backed by versioned per-project GCS storage.",
+  "author": {
+    "name": "ScopeGuard Engineering"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "google-cloud",
+    "iam",
+    "least-privilege",
+    "remediation-copilot",
+    "scc",
+    "wiz",
+    "security",
+    "recommender",
+    "pam",
+    "workload-identity-federation",
+    "compliance",
+    "terraform"
+  ],
+  "suggestedPrompts": [
+    "Run a full ScopeGuard IAM governance assessment on project my-gcp-project and publish the results to GCS.",
+    "Sweep all active GCP projects in organization 123456789012 (or folder <FOLDER_ID>) with ScopeGuard and publish a fleet rollup to GCS.",
+    "Remediate these Google Cloud SCC and Wiz IAM findings for my-gcp-project into a replay-verified Terraform patch and ticket-closure evidence.",
+    "My Cloud Run service account hit a 403 PERMISSION_DENIED error for secretmanager.versions.access in my-gcp-project — calculate the minimal safe IAM fix.",
+    "Design a least-privilege custom role for a Cloud Run Gemini RAG service account in my-gcp-project and publish to GCS.",
+    "Simulate whether our proposed Model B custom roles would cause any 403 errors against 90-day Audit Logs in my-gcp-project.",
+    "Scan our Terraform files for IAM drift, generate an auto-remediated HCL patch, and produce a SOC 2 / CIS GCP compliance report for my-gcp-project."
+  ]
+}

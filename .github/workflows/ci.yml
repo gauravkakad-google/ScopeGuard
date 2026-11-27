@@ -1,0 +1,28 @@
+name: ScopeGuard CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile all Python scripts
+        run: |
+          python3 -m compileall -q plugins/ portal/ tests/
+      - name: Run unit and smoke tests
+        run: |
+          python3 -m unittest discover -s tests -v
+      - name: Check for accidental secrets or local paths
+        run: |
+          if grep -rnE "BEGIN [A-Z ]*PRIVATE KEY|AIza[0-9A-Za-z_-]{35}|ya29\.[0-9A-Za-z_-]+|gh[pousr]_[A-Za-z0-9]{20,}|/Users/[A-Za-z0-9._-]+/" plugins/ portal/ deploy/ examples/ tests/ README.md; then
+            echo "ERROR: Secret, token, or local filesystem path found!"
+            exit 1
+          fi

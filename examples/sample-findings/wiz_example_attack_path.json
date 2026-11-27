@@ -1,0 +1,26 @@
+{
+  "id": "wiz-issue-100001-gcp-iam-escalation",
+  "source": "Wiz",
+  "severity": "CRITICAL",
+  "control": {
+    "id": "WC-GCP-IAM-042",
+    "name": "GCP Service Account with broad project-wide data and admin roles"
+  },
+  "entitySnapshot": {
+    "type": "SERVICE_ACCOUNT",
+    "name": "app-runtime-sa",
+    "externalId": "serviceAccount:app-runtime-sa@my-gcp-project.iam.gserviceaccount.com"
+  },
+  "roles": [
+    "roles/aiplatform.admin",
+    "roles/bigquery.admin",
+    "roles/secretmanager.admin",
+    "roles/storage.admin"
+  ],
+  "attackPath": [
+    "External Internet -> Cloud Run Service",
+    "Cloud Run Service -> Attached Service Account (app-runtime-sa)",
+    "app-runtime-sa -> Project-Wide Secret Manager & Storage Admin"
+  ],
+  "remediationGuidance": "Replace broad project-level admin roles with a least-privilege custom role and resource-scoped bucket/secret bindings."
+}

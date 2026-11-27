@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# macOS / OS
+.DS_Store
+
+# ScopeGuard local outputs & sensitive IAM exports (NEVER commit)
+scopeguard-output/
+demo-output/
+audit-output/
+*iam_policy_backup*.json
+*audit_bundle*.json
+*analysis_results*.json
+*assessment_envelope*.json
+*sweep_progress*.json
+
+# Terraform state & secrets
+.terraform/
+*.tfstate
+*.tfstate.*
+.env
+*.pem
+*.key

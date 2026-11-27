@@ -1,0 +1,27 @@
+{
+  "name": "organizations/123456789012/sources/1111111111111111111/findings/scc-iam-overpriv-cicd-001",
+  "category": "OVERPRIVILEGED_SERVICE_ACCOUNT",
+  "severity": "HIGH",
+  "state": "ACTIVE",
+  "resourceName": "//cloudresourcemanager.googleapis.com/projects/my-gcp-project",
+  "iamBindings": [
+    {
+      "member": "serviceAccount:cicd-deployer-sa@my-gcp-project.iam.gserviceaccount.com",
+      "role": "roles/iam.serviceAccountTokenCreator"
+    },
+    {
+      "member": "serviceAccount:cicd-deployer-sa@my-gcp-project.iam.gserviceaccount.com",
+      "role": "roles/iam.serviceAccountUser"
+    }
+  ],
+  "sourceProperties": {
+    "Principal": "serviceAccount:cicd-deployer-sa@my-gcp-project.iam.gserviceaccount.com",
+    "Roles": [
+      "roles/cloudbuild.builds.editor",
+      "roles/iam.serviceAccountTokenCreator",
+      "roles/iam.serviceAccountUser",
+      "roles/run.developer"
+    ],
+    "Recommendation": "Remove project-wide service account impersonation roles and replace with a least-privilege custom role."
+  }
+}

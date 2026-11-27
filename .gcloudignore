@@ -1,0 +1,15 @@
+.git/
+.github/
+.gitignore
+__pycache__/
+*.pyc
+.DS_Store
+tests/
+examples/
+scopeguard-output/
+README.md
+LICENSE
+SECURITY.md
+CONTRIBUTING.md
+install.sh
+deploy/

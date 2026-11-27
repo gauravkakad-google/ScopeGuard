@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ScopeGuard — Stateless GCS IAM Governance Portal</title>
+  <link rel="stylesheet" href="/styles.css?v=2.1.3" />
+</head>
+<body>
+  <!-- Top Enterprise Header (Pure Stateless GCS Viewer) -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L3 6.5V12C3 17.25 6.84 22.14 12 23.5C17.16 22.14 21 17.25 21 12V6.5L12 2Z" fill="#1A73E8" fill-opacity="0.14" stroke="#1A73E8" stroke-width="1.8"/>
+          <path d="M8.5 12.2L10.8 14.5L15.8 9.5" stroke="#1A73E8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title-row">
+          <h1 class="brand-title">ScopeGuard</h1>
+          <span class="badge badge-blue">11-Skill IAM Remediation Co-Pilot</span>
+        </div>
+        <p class="brand-subtitle">Antigravity Assessment Engine &rarr; Per-Project Versioned GCS Store &rarr; Stateless Review Portal</p>
+      </div>
+    </div>
+
+    <div class="topbar-controls">
+      <div class="control-group">
+        <label for="project-select" class="control-label">Analyzed GCP Project</label>
+        <select id="project-select" class="select-input" aria-label="Select GCP project folder in GCS">
+          <option value="">Loading GCS folders...</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="run-select" class="control-label">Assessment Run Snapshot</label>
+        <select id="run-select" class="select-input" aria-label="Select timestamped GCS run snapshot">
+          <option value="latest">Latest Snapshot</option>
+        </select>
+      </div>
+
+      <div class="control-group quick-jump-wrap">
+        <label for="global-search" class="control-label">Search (&#8984;K or /)</label>
+        <input type="search" id="global-search" class="text-input global-search" placeholder="Principal, role, finding ID…" aria-label="Search findings, principals, and custom roles across this run" aria-autocomplete="list" aria-controls="quick-jump-results" aria-expanded="false" autocomplete="off" />
+        <div id="quick-jump-results" class="quick-jump-dropdown hidden" role="listbox" aria-label="Quick jump search results"></div>
+      </div>
+
+      <button id="btn-open-diff" class="btn btn-secondary" type="button" title="Compare remediation progress &amp; IAM drift between two GCS run snapshots">
+        &#8644; Compare Runs
+      </button>
+
+      <button id="btn-open-recs-md" class="btn btn-secondary" type="button" title="View or download the full Detailed Recommendations &amp; Execution Runbook (.md)">
+        &#128196; Recommendations (.md)
+      </button>
+
+      <button id="btn-sync-gcs" class="btn btn-primary" type="button" title="Reload projects and latest assessment files from GCS">
+        &#8635; Sync from GCS
+      </button>
+
+      <div id="runtime-pill" class="runtime-pill" title="Stateless GCS Viewer Identity &amp; Bucket">
+        <span class="status-indicator status-green"></span>
+        <span id="runtime-pill-text">GCS Read-Only Viewer</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Five Hard Verification Gates Banner -->
+  <section class="gates-ribbon" aria-label="Deterministic Verification Gates">
+    <div class="gates-ribbon-title">Verification &amp; Run Metadata:</div>
+    <div id="gates-container" class="gates-list">
+      <span class="gate-chip">Connecting to GCS assessment bucket...</span>
+    </div>
+  </section>
+
+  <!-- Run provenance & freshness (UI-4 / UI-14): age, mode, telemetry, stale modules -->
+  <section id="run-context-bar" class="run-context-bar" aria-label="Run provenance and data freshness"></section>
+
+  <!-- Global alerts (UI-5): cutover HOLD reconciliation, degraded API preflight, load errors -->
+  <div id="global-alerts" class="global-alerts" aria-live="polite"></div>
+
+  <!-- Main Navigation Tabs: organized by admin job-to-be-done (UI-1). Arrow keys move focus (UI-13). -->
+  <nav class="nav-tabs" role="tablist" aria-label="ScopeGuard views">
+    <button class="nav-tab" role="tab" id="tab-view-fleet" aria-controls="view-fleet" aria-selected="false" tabindex="-1" data-tab="view-fleet">Fleet</button>
+    <button class="nav-tab active" role="tab" id="tab-view-overview" aria-controls="view-overview" aria-selected="true" tabindex="0" data-tab="view-overview">Overview</button>
+    <button class="nav-tab" role="tab" id="tab-view-findings" aria-controls="view-findings" aria-selected="false" tabindex="-1" data-tab="view-findings">Findings <span id="tab-findings-count" class="tab-count"></span></button>
+    <button class="nav-tab" role="tab" id="tab-view-scorecard" aria-controls="view-scorecard" aria-selected="false" tabindex="-1" data-tab="view-scorecard">Identities</button>
+    <button class="nav-tab" role="tab" id="tab-view-inheritance" aria-controls="view-inheritance" aria-selected="false" tabindex="-1" data-tab="view-inheritance">Escalation &amp; Keys</button>
+    <button class="nav-tab" role="tab" id="tab-view-compression" aria-controls="view-compression" aria-selected="false" tabindex="-1" data-tab="view-compression">Changes &amp; Rollback</button>
+    <button class="nav-tab" role="tab" id="tab-view-guardrails" aria-controls="view-guardrails" aria-selected="false" tabindex="-1" data-tab="view-guardrails">Guardrails</button>
+    <button class="nav-tab" role="tab" id="tab-view-architect" aria-controls="view-architect" aria-selected="false" tabindex="-1" data-tab="view-architect">IaC &amp; SCC/Wiz</button>
+    <button class="nav-tab" role="tab" id="tab-view-compliance" aria-controls="view-compliance" aria-selected="false" tabindex="-1" data-tab="view-compliance">Compliance</button>
+    <div class="nav-role-toggle" role="group" aria-label="Role view filter">
+      <div class="segmented-toggle role-segmented">
+        <button type="button" class="seg-btn active" data-role-view="all" aria-pressed="true">All</button>
+        <button type="button" class="seg-btn" data-role-view="devops" aria-pressed="false">DevOps</button>
+        <button type="button" class="seg-btn" data-role-view="secops" aria-pressed="false">SecOps &amp; GRC</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Toast Banner -->
+  <div id="toast-banner" class="toast-banner hidden" role="status" aria-live="polite"></div>
+
+  <!-- Empty State Banner when GCS Bucket has no runs yet -->
+  <div id="empty-gcs-state" class="empty-gcs-banner hidden">
+    <h2 style="margin-top:0;">No GCS Assessment Snapshot Loaded Yet</h2>
+    <p id="empty-gcs-message" style="color:#475569;"></p>
+    <p style="margin-bottom:6px;font-weight:600;">Run from Antigravity to populate this bucket:</p>
+    <pre class="code-block" style="max-height:120px;">"Run a full ScopeGuard IAM governance assessment on project my-gcp-project and publish the results to GCS."</pre>
+  </div>
+
+  <main id="main-workspace" class="workspace">
+    <!-- ================================================================== -->
+    <!-- VIEW 0: ORG & FOLDER MULTI-PROJECT FLEET OVERVIEW                  -->
+    <!-- ================================================================== -->
+    <section id="view-fleet" class="tab-panel" role="tabpanel" aria-labelledby="tab-view-fleet" hidden>
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Organization &amp; Folder Fleet Overview</h2>
+            <p class="card-subtitle">Cross-project IAM posture, escalation paths, SCC/Wiz remediations, and prioritized findings grouped by Organization, Folder, and Project.</p>
+          </div>
+          <div class="control-group" style="min-width:260px;">
+            <label for="fleet-scope-select" class="control-label">Filter by Org / Folder Scope</label>
+            <select id="fleet-scope-select" class="select-input" aria-label="Filter fleet by Organization or Folder">
+              <option value="all">All Analyzed Projects</option>
+            </select>
+          </div>
+        </div>
+        <div id="fleet-sweep-banner" style="margin-bottom:14px;"></div>
+        <div class="kpi-grid" id="fleet-kpi-grid"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Project-Wise IAM Posture Matrix</h2>
+            <p class="card-subtitle">Latest GCS snapshot per project in the selected scope. Click a column header to sort. Stale and not-assessed projects are listed so coverage gaps stay visible.</p>
+          </div>
+          <label class="toggle-label" for="fleet-group-folder">
+            <input type="checkbox" id="fleet-group-folder" /> Group by folder
+          </label>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col" class="sortable" data-sort="project_id" aria-sort="none"><button type="button">GCP Project</button></th>
+                <th scope="col">Org / Folder Ancestry</th>
+                <th scope="col" class="sortable" data-sort="age_days" aria-sort="none"><button type="button">Status / Age</button></th>
+                <th scope="col" class="sortable" data-sort="findings_critical" aria-sort="none"><button type="button">Open Findings</button></th>
+                <th scope="col" class="sortable" data-sort="actionable_principals" aria-sort="none"><button type="button">Principals</button></th>
+                <th scope="col" class="sortable" data-sort="permissions_before" aria-sort="none"><button type="button">Grants Before &rarr; After</button></th>
+                <th scope="col" class="sortable" data-sort="escalation_chains" aria-sort="none"><button type="button">Escalations</button></th>
+                <th scope="col" class="sortable" data-sort="standing_admins" aria-sort="none"><button type="button">Standing Admins</button></th>
+                <th scope="col">GitOps PR</th>
+                <th scope="col">SCC / Wiz Fixes</th>
+                <th scope="col" class="sortable" data-sort="compliance" aria-sort="none"><button type="button">Compliance</button></th>
+                <th scope="col">Action</th>
+              </tr>
+            </thead>
+            <tbody id="fleet-projects-tbody">
+              <tr><td colspan="12">Loading Org / Folder fleet from GCS...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Project-Wise Prioritized Findings (P0 &amp; P1)</h2>
+            <p class="card-subtitle">Critical hygiene, privilege escalation, PAM, WIF, GitOps, and inbound SCC/Wiz findings organized project-by-project across the selected Org or Folder.</p>
+          </div>
+        </div>
+        <div id="fleet-findings-by-project"></div>
+      </div>
+
+      <div class="two-col-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Finding Category Heatmap</h2>
+              <p class="card-subtitle">Open findings per project and category. Darker cells mean more findings.</p>
+            </div>
+          </div>
+          <div id="fleet-heatmap" class="table-scroll"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Top 10 Riskiest Principals (Fleet)</h2>
+              <p class="card-subtitle">Ranked by weighted severity of open findings across all projects in scope</p>
+            </div>
+          </div>
+          <div id="fleet-top-principals" class="table-scroll"></div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ================================================================== -->
+    <!-- OVERVIEW (UI-1): risk now, change since last run, next 5 actions   -->
+    <!-- ================================================================== -->
+    <section id="view-overview" class="tab-panel active" role="tabpanel" aria-labelledby="tab-view-overview">
+      <div class="overview-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Risk Now</h2>
+              <p class="card-subtitle">Open findings in this run by severity, plus cutover readiness from the replay simulator</p>
+            </div>
+            <span class="tag tag-observed" title="Derived from the live IAM policy and audit logs captured in this run">Observed</span>
+          </div>
+          <div id="overview-risk" class="overview-risk"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Change Since Last Run</h2>
+              <p class="card-subtitle">Open findings across the last runs in GCS (new, resolved, regressed)</p>
+            </div>
+          </div>
+          <div id="overview-trend" class="overview-trend"></div>
+        </div>
+      </div>
+
+      <div class="card deliverables-card">
+        <div class="deliverables-row">
+          <div class="deliverables-title">
+            <strong>Run Deliverables &amp; Machine Exports</strong>
+            <span class="muted">1-click downloads for this snapshot</span>
+          </div>
+          <div id="overview-deliverables-bar" class="deliverables-pills" role="group" aria-label="Run deliverables downloads"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">Posture KPIs</h2>
+            <p class="card-subtitle">Hover or focus &#9432; for exact definitions. Counts are split by principal type where available.</p>
+          </div>
+          <div class="legend" aria-label="Data provenance legend">
+            <span class="tag tag-observed">Observed</span>
+            <span class="tag tag-proposed">Proposal &mdash; not applied</span>
+            <span class="tag tag-simulated">Simulated</span>
+          </div>
+        </div>
+        <div id="overview-kpis" class="kpi-grid"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Next 5 Actions</h2>
+            <p class="card-subtitle">Highest severity and priority open findings. Open a change plan for pre-checks, steps, rollback and verification.</p>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-overview-all-findings">View all findings &rarr;</button>
+        </div>
+        <div id="overview-next-actions"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Resolved Since Previous Run</h2>
+            <p class="card-subtitle">Findings present in the previous run that are no longer detected (only for modules that re-ran)</p>
+          </div>
+        </div>
+        <div id="overview-resolved"></div>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- FINDINGS QUEUE (UI-2): unified, filterable, exportable             -->
+    <!-- ================================================================== -->
+    <section id="view-findings" class="tab-panel" role="tabpanel" aria-labelledby="tab-view-findings" hidden>
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">Findings Queue</h2>
+            <p class="card-subtitle">Every finding from every module in one list, with a stable ID, status across runs, and the deliverable that fixes it</p>
+          </div>
+          <div class="btn-group" role="group" aria-label="Export findings">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-export-csv" title="Export the filtered findings as CSV">Export CSV</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-export-json" title="Export the filtered findings as JSON">Export JSON</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-export-md" title="Export the filtered findings as a Markdown table">Export Markdown</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-export-evidence" title="Download a JSON evidence pack: run metadata, findings, trend, recommendations and deliverables">Evidence Pack</button>
+          </div>
+        </div>
+        <div id="findings-preset-pills" class="preset-pills" role="group" aria-label="Daily triage presets"></div>
+        <div class="filter-bar findings-filters">
+          <label class="sr-only" for="f-search">Search findings</label>
+          <input type="search" id="f-search" class="text-input" placeholder="Search ID, principal, role, title&hellip;" autocomplete="off" />
+          <label class="sr-only" for="f-severity">Severity</label>
+          <select id="f-severity" class="select-input"><option value="">All severities</option></select>
+          <label class="sr-only" for="f-priority">Priority</label>
+          <select id="f-priority" class="select-input"><option value="">All priorities</option></select>
+          <label class="sr-only" for="f-status">Status</label>
+          <select id="f-status" class="select-input"><option value="">All statuses</option></select>
+          <label class="sr-only" for="f-category">Category</label>
+          <select id="f-category" class="select-input"><option value="">All categories</option></select>
+          <label class="sr-only" for="f-ptype">Principal type</label>
+          <select id="f-ptype" class="select-input"><option value="">All principal types</option></select>
+          <label class="sr-only" for="f-sort">Sort</label>
+          <select id="f-sort" class="select-input">
+            <option value="severity">Sort: severity</option>
+            <option value="priority">Sort: priority</option>
+            <option value="age">Sort: oldest first</option>
+            <option value="principal">Sort: principal</option>
+            <option value="category">Sort: category</option>
+          </select>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-f-clear">Clear filters</button>
+        </div>
+        <div id="findings-summary" class="findings-summary" aria-live="polite"></div>
+        <div class="table-scroll">
+          <table class="data-table findings-table">
+            <thead>
+              <tr>
+                <th scope="col">ID</th>
+                <th scope="col">Severity</th>
+                <th scope="col">Priority</th>
+                <th scope="col">Category</th>
+                <th scope="col">Principal</th>
+                <th scope="col">Finding</th>
+                <th scope="col">Status / Age</th>
+                <th scope="col">Confidence</th>
+                <th scope="col">Action</th>
+              </tr>
+            </thead>
+            <tbody id="findings-tbody">
+              <tr><td colspan="9">Loading findings&hellip;</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <nav id="findings-pager" class="pager" aria-label="Findings pagination"></nav>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- VIEW 1: EXECUTIVE POSTURE SCORECARD & ORG HIERARCHY                -->
+    <!-- ================================================================== -->
+    <section id="view-scorecard" class="tab-panel" role="tabpanel" aria-labelledby="tab-view-scorecard" hidden>
+      <div id="freshness-scorecard"></div>
+      <div class="kpi-grid" id="kpi-grid"></div>
+
+      <div class="two-col-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">F1–F7 Governance Finding Taxonomy</h2>
+              <p class="card-subtitle">Automated classification from <code>gcp-iam-recommender-audit</code></p>
+            </div>
+            <span id="telemetry-mode-badge" class="badge badge-neutral">Telemetry</span>
+          </div>
+          <div id="findings-bars" class="findings-bars"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Principal Classification &amp; Resource Ancestry</h2>
+              <p class="card-subtitle">100% Principal Accounting + <code>gcp-iam-org-hierarchy-auditor</code></p>
+            </div>
+            <span id="etag-badge" class="badge badge-mono">etag: --</span>
+          </div>
+          <div id="ancestry-chain-box" class="ancestry-chain"></div>
+          <div id="taxonomy-list" class="taxonomy-list"></div>
+          <div id="org-constraints-summary" style="margin-top:12px;"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">100% Principal Inventory &amp; Least-Privilege Mapping <span class="tag tag-observed">Observed</span> <span class="tag tag-proposed">Proposal &mdash; not applied</span></h2>
+            <p class="card-subtitle">Every IAM member mapped to its taxonomy, current roles, recommended persona role (Model A, default) and the equivalent capability-role bundle (Model B, alternative)</p>
+          </div>
+          <div class="filter-bar">
+            <input type="search" id="principal-search" class="text-input" placeholder="Search member, role, or status..." />
+            <select id="taxonomy-filter" class="select-input">
+              <option value="ALL">All Principal Categories</option>
+              <option value="NON_AGENT">Actionable Identities (Exclude Service Agents)</option>
+              <option value="Human Users">Human Users</option>
+              <option value="Customer-Managed Service Accounts">Customer-Managed SAs</option>
+              <option value="Google-Managed Service Agents">Google-Managed Service Agents</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Principal Identity</th>
+                <th>Taxonomy</th>
+                <th>Current Bound Roles</th>
+                <th>Persona Role (Model A &middot; default)</th>
+                <th>Capability Bundle (Model B &middot; alternative)</th>
+                <th>Governance Action</th>
+              </tr>
+            </thead>
+            <tbody id="principals-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- VIEW 2: TRANSITIVE INHERITANCE & WORKLOAD FEDERATION (WIF)         -->
+    <!-- ================================================================== -->
+    <section id="view-inheritance" class="tab-panel" role="tabpanel" aria-labelledby="tab-view-inheritance" hidden>
+      <div id="freshness-inheritance"></div>
+
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">Multi-Hop Service Account Inheritance &amp; Scope Graph</h2>
+            <p class="card-subtitle">Inspects both Project IAM bindings and SA resource policies for <code>actAs</code> &amp; <code>getAccessToken</code> paths</p>
+          </div>
+          <div class="segmented-toggle" role="group">
+            <button type="button" class="seg-btn active" id="btn-graph-before">Current Brownfield State</button>
+            <button type="button" class="seg-btn" id="btn-graph-after">Simulated Post-Phase P1 Cutover</button>
+          </div>
+        </div>
+        <div id="inheritance-svg-stage" class="svg-stage"></div>
+        <div id="inheritance-cards" class="chain-cards-grid"></div>
+      </div>
+
+      <!-- Workload Identity Federation & SA Key Audit -->
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">Service Account Key Hygiene &amp; Keyless Workload Identity Federation (WIF)</h2>
+            <p class="card-subtitle">Generated by <code>gcp-iam-federation-architect</code> — replaces static JSON keys with OIDC federation</p>
+          </div>
+          <div class="btn-group">
+            <button type="button" class="btn btn-secondary btn-sm" data-copy-target="wif-tf-viewer">Copy</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-wif-tf">Download wif_federation.tf</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-key-sh">Download retire_sa_keys.sh</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-wif-gha" style="display:none;">Download github-actions-wif.yml</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-wif-gitlab" style="display:none;">Download gitlab-ci-wif.yml</button>
+          </div>
+        </div>
+        <div class="two-col-grid">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Service Account</th>
+                  <th>Static Keys</th>
+                  <th>Posture</th>
+                  <th>Recommended Federation</th>
+                </tr>
+              </thead>
+              <tbody id="wif-sa-tbody"></tbody>
+            </table>
+          </div>
+          <div>
+            <pre id="wif-tf-viewer" class="code-block"></pre>
+          </div>
+        </div>
+        <div id="wif-existing-audit-section" style="margin-top:16px;"></div>
+      </div>
+
+      <div class="two-col-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">F5 Conditional &amp; F6 Service Agent Hygiene</h2>
+              <p class="card-subtitle">Past-window IAM conditions and excess service agent roles</p>
+            </div>
+          </div>
+          <div id="conditional-and-scope-list" class="finding-detail-list"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">F4 Dormant Workload Identities (90-Day Window)</h2>
+              <p class="card-subtitle">Two-stage disablement prior to deletion with <code>uniqueId</code> recovery</p>
+            </div>
+          </div>
+          <div id="inactive-sa-list" class="finding-detail-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- VIEW 3: DISJOINT ROLE COMPRESSION & BREAKGLASS SIMULATOR           -->
+    <!-- ================================================================== -->
+    <section id="view-compression" class="tab-panel" role="tabpanel" aria-labelledby="tab-view-compression" hidden>
+      <div id="freshness-compression"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Custom Role Design: Persona Roles &amp; Capability Roles</h2>
+            <p class="card-subtitle">Persona roles (Model A, recommended default) grant each workload exactly its used permissions. Capability roles (Model B) are zero-overlap building blocks (R<sub>i</sub> &cap; R<sub>j</sub> = &empty;) whose per-principal bundles grant exactly the same permissions.</p>
+          </div>
+          <span class="badge badge-green" id="disjoint-proof-badge">Pairwise Overlap: 0</span>
+        </div>
+        <div id="role-evidence-caveat" style="display:none; margin: 0 0 0.6rem 0;"></div>
+        <div id="compression-svg-stage" class="svg-stage"></div>
+      </div>
+
+      <!-- Breakglass 90-Day Audit Log Replay Simulator -->
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">Pre-Cutover 90-Day Cloud Audit Log Shadow Replay Simulator <span class="tag tag-simulated">Simulated</span></h2>
+            <p class="card-subtitle">Generated by <code>gcp-iam-breakglass-simulator</code> — proves proposed custom roles will not break production API traffic</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span class="badge badge-green" id="sim-verdict-badge">Verifying Replay...</span>
+            <span id="sim-confidence-badge"></span>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Principal</th>
+                <th>Phase</th>
+                <th>Proposed Custom Role</th>
+                <th>Replayed Calls</th>
+                <th>Simulated 403s</th>
+                <th>Coverage</th>
+                <th>Replay Verdict</th>
+                <th>Confidence <span class="info-tip" tabindex="0" role="img" aria-label="High: 100 percent BigQuery Log Analytics telemetry. Medium: 20 or more replayed calls from paginated Cloud Logging. Low: fewer than 20 calls, zero calls, or the log page limit was hit." title="High: 100% BigQuery Log Analytics telemetry. Medium: 20+ replayed calls from paginated Cloud Logging. Low: <20 calls, zero calls, or the log page limit was hit.">&#9432;</span></th>
+              </tr>
+            </thead>
+            <tbody id="simulator-tbody"></tbody>
+          </table>
+        </div>
+        <div id="sim-coverage-note" class="coverage-note"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Phased Remediation Roadmap (P0 &rarr; P3) <span class="tag tag-proposed">Proposal &mdash; not applied</span></h2>
+            <p class="card-subtitle">Ordered by operational safety and verification lead-time</p>
+          </div>
+        </div>
+        <div id="phase-timeline" class="phase-grid"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">HTTP 403 Symptom-to-Principal Triage Matrix</h2>
+            <p class="card-subtitle">Map any post-cutover <code>PERMISSION_DENIED</code> symptom to its 1-command (&lt;60s) rollback</p>
+          </div>
+          <input type="search" id="triage-search" class="text-input" placeholder="Filter by symptom or principal..." />
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Phase</th>
+                <th>Observed Failure / Symptom</th>
+                <th>Affected Principal</th>
+                <th>Immediate 1-Command Rollback (&lt;60s Recovery)</th>
+              </tr>
+            </thead>
+            <tbody id="triage-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="two-col-grid">
+        <div class="card">
+          <div class="card-header card-header-wrap">
+            <div>
+              <h2 class="card-title">Validated Custom Role Definitions (YAML) <span class="tag tag-proposed">Proposal &mdash; not applied</span></h2>
+              <p class="card-subtitle">Verified against <code>queryTestablePermissions</code></p>
+            </div>
+            <div class="btn-group" style="align-items:center;">
+              <select id="yaml-file-select" class="select-input"></select>
+              <button type="button" class="btn btn-secondary btn-sm" data-copy-target="yaml-code-viewer">Copy</button>
+            </div>
+          </div>
+          <pre id="yaml-code-viewer" class="code-block"></pre>
+        </div>
+
+        <div class="card">
+          <div class="card-header card-header-wrap">
+            <div>
+              <h2 class="card-title">Deterministic Rollback &amp; Ecosystem Exports</h2>
+              <p class="card-subtitle">Atomic <code>etag</code> restoration, Cloud SCC &amp; Wiz SARIF v2.1.0</p>
+            </div>
+            <div class="btn-group">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-rollback">Download Rollback .sh</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-scc">Export SCC JSON</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-sarif">Export SARIF</button>
+            </div>
+          </div>
+          <div class="subtabs" role="tablist">
+            <button type="button" class="subtab active" data-artifact="rollback">rollback_runbook.sh</button>
+            <button type="button" class="subtab" data-artifact="scc">Cloud SCC Payload</button>
+            <button type="button" class="subtab" data-artifact="sarif">Wiz SARIF v2.1.0</button>
+            <button type="button" class="subtab" data-artifact="report">Executive Markdown</button>
+          </div>
+          <pre id="artifact-code-viewer" class="code-block"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- VIEW 4: ZERO STANDING PRIVILEGE (PAM) & IAM v2 DENY POLICIES       -->
+    <!-- ================================================================== -->
+    <section id="view-guardrails" class="tab-panel" role="tabpanel" aria-labelledby="tab-view-guardrails" hidden>
+      <div id="freshness-guardrails"></div>
+
+      <div class="two-col-grid">
+        <div class="card">
+          <div class="card-header card-header-wrap">
+            <div>
+              <h2 class="card-title">Just-in-Time PAM Entitlements (Zero Standing Privilege) <span class="tag tag-proposed">Proposal &mdash; not applied</span></h2>
+              <p class="card-subtitle">Generated by <code>gcp-iam-jit-pam-architect</code> — converts standing human admin grants into time-boxed PAM elevations</p>
+            </div>
+            <div class="btn-group">
+              <button type="button" class="btn btn-secondary btn-sm" data-copy-target="pam-tf-viewer">Copy</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-pam-tf">Download pam_entitlements.tf</button>
+            </div>
+          </div>
+          <div id="pam-entitlements-list" class="scope-cards" style="margin-bottom:14px;"></div>
+          <pre id="pam-tf-viewer" class="code-block"></pre>
+        </div>
+
+        <div class="card">
+          <div class="card-header card-header-wrap">
+            <div>
+              <h2 class="card-title">IAM v2 Preventive Deny Policies (D1–D5 (incl. AI Agent Containment)) <span class="tag tag-proposed">Proposal &mdash; not applied</span></h2>
+              <p class="card-subtitle">Generated by <code>gcp-iam-deny-policy-architect</code> — immutable guardrails evaluated prior to Allow bindings</p>
+            </div>
+            <div class="btn-group">
+              <button type="button" class="btn btn-secondary btn-sm" data-copy-target="deny-tf-viewer">Copy</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-deny-tf">Download deny_policies.tf</button>
+            </div>
+          </div>
+          <div id="deny-rules-list" class="scope-cards" style="margin-bottom:14px;"></div>
+          <pre id="deny-tf-viewer" class="code-block"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- VIEW 5: SHIFT-LEFT ROLE ARCHITECT & GITOPS PR GUARDRAIL            -->
+    <!-- ================================================================== -->
+    <section id="view-architect" class="tab-panel" role="tabpanel" aria-labelledby="tab-view-architect" hidden>
+      <div id="freshness-architect"></div>
+
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">Published Shift-Left Role Architect Blueprints</h2>
+            <p class="card-subtitle">Synthesized in Antigravity by <code>gcp-iam-role-architect</code> and loaded directly from GCS</p>
+          </div>
+          <span class="badge badge-blue">GCS Blueprint Catalog</span>
+        </div>
+
+        <div class="preset-bar">
+          <span class="preset-label">Published Role Designs in GCS:</span>
+          <div id="architect-design-chips" class="preset-chips"></div>
+        </div>
+
+        <div class="two-col-grid">
+          <div>
+            <h3 style="margin:0 0 8px;font-size:0.95rem;">Headless Workload vs. Interactive Console Split</h3>
+            <div id="arch-persona-comparison"></div>
+            <div id="arch-guardrail-alerts" class="guardrail-list"></div>
+          </div>
+          <div>
+            <h3 style="margin:0 0 8px;font-size:0.95rem;">Resource Hierarchy Scope Splitter &amp; Capability Reuse</h3>
+            <div id="arch-scope-diagram" class="scope-cards"></div>
+          </div>
+        </div>
+
+        <div style="margin-top:18px;">
+          <div class="card-header card-header-wrap" style="padding:0 0 10px;">
+            <h3 style="margin:0;font-size:0.95rem;">Generated Deliverables (Terraform, YAML, CLI &amp; SARIF)</h3>
+            <div class="btn-group">
+              <button type="button" class="btn btn-secondary btn-sm" data-copy-target="arch-code-viewer">Copy</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-arch-tf">Download main.tf</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-arch-sarif">Download SARIF</button>
+            </div>
+          </div>
+          <div class="subtabs" id="arch-subtabs" role="tablist">
+            <button type="button" class="subtab active" data-arch-tab="main_tf">Terraform (main.tf)</button>
+            <button type="button" class="subtab" data-arch-tab="yamls">Custom Role YAMLs</button>
+            <button type="button" class="subtab" data-arch-tab="provision_sh">gcloud Provisioning (.sh)</button>
+            <button type="button" class="subtab" data-arch-tab="rollback_sh">Rollback Runbook (.sh)</button>
+            <button type="button" class="subtab" data-arch-tab="sarif">Shift-Left SARIF</button>
+          </div>
+          <pre id="arch-code-viewer" class="code-block"></pre>
+        </div>
+      </div>
+
+      <!-- GitOps PR Guardrail Terraform Scan -->
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">GitOps Pull Request Terraform Drift Guardrail (G1–G6)</h2>
+            <p class="card-subtitle">Generated by <code>gcp-iam-gitops-pr-guardrail</code> — blocks Basic Roles / un-scoped bindings and synthesizes fixed Terraform HCL</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span id="gitops-verdict-badge" class="badge badge-neutral">--</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-copy-target="gitops-patch-viewer">Copy</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-gitops-patch">Download Fixed .tf Patch</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-gitops-ci">Download GitHub Action .yml</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-gitops-pr-md" style="display:none;">Download PR Comment .md</button>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Rule</th>
+                <th>Severity</th>
+                <th>File &amp; Line</th>
+                <th>Resource &amp; Role</th>
+                <th>Finding &amp; Remediation</th>
+              </tr>
+            </thead>
+            <tbody id="gitops-tbody"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:14px;">
+          <h3 style="margin:0 0 8px;font-size:0.9rem;">Auto-Generated Least-Privilege Terraform Patch (<code>gitops_remediation_patch.tf</code>)</h3>
+          <pre id="gitops-patch-viewer" class="code-block" style="max-height:220px;"></pre>
+        </div>
+      </div>
+
+      <!-- Inbound Cloud SCC & Wiz Finding-to-Fix Remediator -->
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">Inbound Cloud SCC &amp; Wiz Finding-to-Fix Co-Pilot</h2>
+            <p class="card-subtitle">Generated by <code>gcp-iam-finding-remediator</code> — turns SCC &amp; Wiz alerts into replay-verified Terraform fixes &amp; ticket-closure notes</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span id="remediator-count-badge" class="badge badge-blue">0 Findings</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-copy-target="remediator-tf-viewer">Copy</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-rem-tf">Download Remediation .tf</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-rem-notes">Download Proposed-Remediation Ticket .md</button>
+          </div>
+        </div>
+        <div id="remediator-cards" class="chain-cards-grid" style="margin-bottom:14px;"></div>
+        <pre id="remediator-tf-viewer" class="code-block" style="max-height:240px;"></pre>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- VIEW 6: REGULATORY COMPLIANCE & AUDITOR EVIDENCE                   -->
+    <!-- ================================================================== -->
+    <section id="view-compliance" class="tab-panel" role="tabpanel" aria-labelledby="tab-view-compliance" hidden>
+      <div id="freshness-compliance"></div>
+
+      <div id="compliance-framework-cards" class="framework-grid"></div>
+
+      <div class="card">
+        <div class="card-header card-header-wrap">
+          <div>
+            <h2 class="card-title">Regulatory Control-by-Control Audit Matrix</h2>
+            <p class="card-subtitle">Generated by <code>gcp-iam-compliance-mapper</code> across CIS GCP v3.0, SOC 2 Type II, ISO/IEC 27001:2022, and PCI-DSS v4.0</p>
+          </div>
+          <div class="filter-bar">
+            <select id="compliance-fw-filter" class="select-input">
+              <option value="ALL">All Frameworks</option>
+              <option value="CIS GCP v3.0">CIS GCP v3.0</option>
+              <option value="SOC 2 Type II">SOC 2 Type II</option>
+              <option value="ISO/IEC 27001:2022">ISO/IEC 27001:2022</option>
+              <option value="PCI-DSS v4.0">PCI-DSS v4.0</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-compliance-md">Download Auditor Evidence (.md)</button>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Framework</th>
+                <th>Control</th>
+                <th>Current Status</th>
+                <th>Post-Cutover</th>
+                <th>Observed Finding Detail</th>
+                <th>Wave</th>
+                <th>Evidence Artifact</th>
+              </tr>
+            </thead>
+            <tbody id="compliance-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Standalone Auditor Evidence Report (Markdown)</h2>
+            <p class="card-subtitle">Ready for GRC / external audit submission</p>
+          </div>
+        </div>
+        <pre id="compliance-md-viewer" class="code-block"></pre>
+      </div>
+    </section>
+  </main>
+
+  <!-- Run-to-Run Remediation Progress & Drift Diff Modal -->
+  <div id="diff-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="diff-modal-title">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div>
+          <h2 id="diff-modal-title" class="card-title">Run-to-Run Remediation Burn-Down &amp; IAM Drift Diff</h2>
+          <p class="card-subtitle">Compares two immutable GCS assessment snapshots to track ticket closure and catch newly introduced IAM drift</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-close-diff-modal" aria-label="Close diff modal">&times; Close</button>
+      </div>
+      <div class="modal-body">
+        <div id="diff-content">Loading comparison from GCS...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unified Master Recommendations (.md) Modal -->
+  <div id="recs-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="recs-modal-title">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div>
+          <h2 id="recs-modal-title" class="card-title">Master IAM Recommendations &amp; Phased Execution Runbook</h2>
+          <p class="card-subtitle">Unified multi-skill recommendations synthesized directly from the selected GCS snapshot</p>
+        </div>
+        <div class="filter-bar">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-copy-recs-md">Copy Markdown</button>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-dl-recs-md">Download .md</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-close-recs-modal" aria-label="Close modal">&times; Close</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <pre id="recs-md-viewer" class="code-block"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Identity drawer (UI-6): everything about one principal in one place -->
+  <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+  <aside id="identity-drawer" class="drawer hidden" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <div class="drawer-header">
+      <div>
+        <h2 id="drawer-title" class="card-title">Identity</h2>
+        <p id="drawer-subtitle" class="card-subtitle"></p>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" id="btn-close-drawer" aria-label="Close identity details">&times; Close</button>
+    </div>
+    <div id="drawer-body" class="drawer-body"></div>
+  </aside>
+
+  <!-- Change plan modal (UI-9): read-only proposal with pre-checks, steps, rollback, verify -->
+  <div id="plan-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="plan-modal-title">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div>
+          <h2 id="plan-modal-title" class="card-title">Change Plan</h2>
+          <p class="card-subtitle"><span class="tag tag-proposed">Proposal &mdash; not applied</span> ScopeGuard never changes IAM. Review and run these commands through your own change process.</p>
+        </div>
+        <div class="filter-bar">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-copy-plan">Copy full plan</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-close-plan-modal" aria-label="Close change plan">&times; Close</button>
+        </div>
+      </div>
+      <div class="modal-body" id="plan-body"></div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div>ScopeGuard v2.1 — 11-Skill Antigravity IAM Governance Suite &amp; Stateless GCS Portal</div>
+    <div>Zero Web-Tier IAM Permissions &bull; Immutable GCS Run History &bull; Deterministic <code>etag</code> Rollback</div>
+  </footer>
+
+  <script src="/insights.js?v=2.1.3"></script>
+  <script src="/app.js?v=2.1.3"></script>
+</body>
+</html>
