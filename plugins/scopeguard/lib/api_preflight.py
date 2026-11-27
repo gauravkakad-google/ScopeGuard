@@ -122,12 +122,16 @@ def run_skill_api_preflight(
   `--skip-api-check` is set, exits with `EXIT_APIS_ENABLEMENT_REQUIRED` (23)
   when required APIs are disabled and `--ensure-apis` was not passed.
   """
+  # Only treat securitycenter.googleapis.com as a blocking preflight requirement
+  # when the user explicitly passed --fetch-live-scc. Default auto-probe mode
+  # degrades gracefully inside finding_remediator_cli when SCC is disabled.
+  explicit_scc = bool(getattr(args, "explicit_fetch_live_scc", False))
   apis_to_check = (
       list(required_apis)
       if required_apis is not None
       else resolve_required_apis_for_stages(
           stages=stages,
-          include_live_scc=bool(getattr(args, "fetch_live_scc", False)),
+          include_live_scc=explicit_scc,
           include_gcs=not bool(getattr(args, "local_only", False)),
       )
   )

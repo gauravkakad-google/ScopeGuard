@@ -33,7 +33,9 @@ import re
 import shlex
 import sys
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from urllib import error as urllib_error
 from urllib import parse as urllib_parse
+from urllib import request as urllib_request
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 if str(PLUGIN_ROOT) not in sys.path:
@@ -603,6 +605,127 @@ def fetch_live_scc_iam_findings(
       break
   LOGGER.warning("Live SCC findings unavailable for %s: %s", project_id, last_exc)
   return []
+
+
+_WIZ_DEFAULT_AUTH_URL = "https://auth.app.wiz.io/oauth/token"
+_WIZ_IAM_TOKENS = (
+    "IAM", "ROLE", "SERVICE_ACCOUNT", "SERVICE ACCOUNT", "KEY", "ADMIN",
+    "OWNER", "EDITOR", "PRIVILEGE", "ESCALAT", "IMPERSONAT", "FEDERAT",
+    "WIF", "IDENTITY", "PERMISSION", "PRINCIPAL", "ACCESS",
+)
+_WIZ_ISSUES_GQL = """
+query ScopeGuardGcpIssues($first: Int, $filterBy: IssueFilters) {
+  issues(first: $first, filterBy: $filterBy) {
+    nodes {
+      id
+      severity
+      status
+      createdAt
+      control { id name description }
+      entitySnapshot {
+        id
+        type
+        name
+        nativeType
+        subscriptionExternalId
+        providerId
+      }
+      serviceTickets { externalId name url }
+    }
+  }
+}
+"""
+
+
+def fetch_live_wiz_iam_findings(
+    project_id: str, timeout_seconds: int = 20
+) -> List[Dict[str, Any]]:
+  """Queries Wiz GraphQL API for open GCP IAM issues when Wiz env vars are set.
+
+  Requires `WIZ_CLIENT_ID`, `WIZ_CLIENT_SECRET`, and `WIZ_API_URL` (e.g.
+  `https://api.us1.app.wiz.io/graphql`). Optional `WIZ_AUTH_URL` defaults to
+  `https://auth.app.wiz.io/oauth/token`. Silently returns `[]` when credentials
+  are not configured; degrades gracefully on HTTP/network errors without ever
+  logging secrets or tokens.
+  """
+  client_id = os.environ.get("WIZ_CLIENT_ID", "").strip()
+  client_secret = os.environ.get("WIZ_CLIENT_SECRET", "").strip()
+  api_url = os.environ.get("WIZ_API_URL", "").strip()
+  auth_url = os.environ.get("WIZ_AUTH_URL", _WIZ_DEFAULT_AUTH_URL).strip() or _WIZ_DEFAULT_AUTH_URL
+  if not (client_id and client_secret and api_url):
+    return []
+  # Enforce HTTPS to prevent accidental plaintext credential transmission.
+  if not (api_url.startswith("https://") and auth_url.startswith("https://")):
+    LOGGER.warning("Live Wiz query skipped: WIZ_API_URL and WIZ_AUTH_URL must use https://")
+    return []
+
+  try:
+    token_body = urllib_parse.urlencode({
+        "grant_type": "client_credentials",
+        "audience": "wiz-api",
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }).encode("utf-8")
+    token_req = urllib_request.Request(
+        auth_url,
+        data=token_body,
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+    )
+    with urllib_request.urlopen(token_req, timeout=timeout_seconds) as resp:
+      token_data = json.loads(resp.read().decode("utf-8"))
+    access_token = str(token_data.get("access_token") or "")
+    if not access_token:
+      LOGGER.warning("Live Wiz auth returned no access_token for %s", project_id)
+      return []
+
+    gql_payload = json.dumps({
+        "query": _WIZ_ISSUES_GQL,
+        "variables": {
+            "first": 100,
+            "filterBy": {
+                "status": ["OPEN", "IN_PROGRESS"],
+                "relatedEntity": {"cloudPlatform": ["GCP"]},
+            },
+        },
+    }).encode("utf-8")
+    gql_req = urllib_request.Request(
+        api_url,
+        data=gql_payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    with urllib_request.urlopen(gql_req, timeout=timeout_seconds) as resp:
+      gql_resp = json.loads(resp.read().decode("utf-8"))
+  except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, ValueError, OSError) as exc:
+    LOGGER.warning("Live Wiz findings unavailable for %s: %s", project_id, exc)
+    return []
+
+  nodes = ((gql_resp.get("data") or {}).get("issues") or {}).get("nodes") or []
+  out: List[Dict[str, Any]] = []
+  pid_lower = project_id.lower()
+  for node in nodes:
+    if not isinstance(node, dict):
+      continue
+    snap = node.get("entitySnapshot") or {}
+    sub_id = str(snap.get("subscriptionExternalId") or snap.get("providerId") or "").lower()
+    ent_name = str(snap.get("name") or "").lower()
+    if pid_lower not in sub_id and pid_lower not in ent_name:
+      continue
+    ctrl = node.get("control") or {}
+    haystack = " ".join([
+        str(ctrl.get("name") or ""),
+        str(ctrl.get("description") or ""),
+        str(snap.get("type") or ""),
+        str(snap.get("nativeType") or ""),
+    ]).upper()
+    if any(tok in haystack for tok in _WIZ_IAM_TOKENS):
+      out.append(normalize_inbound_finding(node, source_hint="wiz"))
+  return out
 
 
 # ---------------------------------------------------------------------------
@@ -1618,8 +1741,29 @@ def main() -> int:
   parser.add_argument("--finding-json", default="", help="Raw inline SCC or Wiz JSON string.")
   parser.add_argument(
       "--fetch-live-scc",
+      dest="fetch_live_scc",
       action="store_true",
-      help="Attempt to pull live active IAM findings from Security Command Center API.",
+      default=None,
+      help="Pull live active IAM findings from Security Command Center API (auto-enabled when no finding file is passed).",
+  )
+  parser.add_argument(
+      "--no-fetch-live-scc",
+      dest="fetch_live_scc",
+      action="store_false",
+      help="Disable live Security Command Center API lookup.",
+  )
+  parser.add_argument(
+      "--fetch-live-wiz",
+      dest="fetch_live_wiz",
+      action="store_true",
+      default=None,
+      help="Pull live open GCP IAM issues from Wiz GraphQL API when WIZ_CLIENT_ID, WIZ_CLIENT_SECRET, and WIZ_API_URL are set (auto-enabled when configured).",
+  )
+  parser.add_argument(
+      "--no-fetch-live-wiz",
+      dest="fetch_live_wiz",
+      action="store_false",
+      help="Disable live Wiz GraphQL API lookup even when Wiz env vars are set.",
   )
   parser.add_argument("--output-dir", required=True, help="Directory to write remediation patch & notes.")
   parser.add_argument(
@@ -1681,8 +1825,13 @@ def main() -> int:
   except (OSError, ValueError) as exc:
     LOGGER.error("Unable to read inbound findings: %s", exc)
     return 2
-  if args.fetch_live_scc:
+  has_file_input = bool(args.scc_finding_file or args.wiz_issue_file or args.finding_json)
+  auto_scc = args.fetch_live_scc if args.fetch_live_scc is not None else (not has_file_input)
+  auto_wiz = args.fetch_live_wiz if args.fetch_live_wiz is not None else (not has_file_input)
+  if auto_scc:
     inbound.extend(fetch_live_scc_iam_findings(args.project, gcp_client))
+  if auto_wiz:
+    inbound.extend(fetch_live_wiz_iam_findings(args.project))
 
   # Prior assessment: local envelope file wins, else GCS latest.json.
   prior: Dict[str, Any] = {}

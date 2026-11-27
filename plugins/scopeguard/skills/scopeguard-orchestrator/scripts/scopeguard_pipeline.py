@@ -787,10 +787,16 @@ def _run_single_project_pipeline(
       inbound_findings.extend(
           mods["rem"].normalize_inbound_finding(d, "wiz") for d in docs
       )
-    if getattr(args, "fetch_live_scc", False):
-      inbound_findings.extend(
-          mods["rem"].fetch_live_scc_iam_findings(project_id, gcp_client)
-      )
+    if getattr(args, "fetch_live_scc", True):
+      scc_live = mods["rem"].fetch_live_scc_iam_findings(project_id, gcp_client)
+      if scc_live:
+        _log_progress(f"  -> Auto-pulled {len(scc_live)} active IAM finding(s) from Cloud SCC.")
+        inbound_findings.extend(scc_live)
+    if getattr(args, "fetch_live_wiz", True) and hasattr(mods["rem"], "fetch_live_wiz_iam_findings"):
+      wiz_live = mods["rem"].fetch_live_wiz_iam_findings(project_id)
+      if wiz_live:
+        _log_progress(f"  -> Auto-pulled {len(wiz_live)} open GCP IAM issue(s) from Wiz.")
+        inbound_findings.extend(wiz_live)
     if target_principal and inbound_findings:
       inbound_findings = [
           f for f in inbound_findings
@@ -1179,11 +1185,38 @@ def main() -> int:
       default="",
       help="Optional inbound Wiz issue / attack-path JSON file for finding-to-fix remediation.",
   )
+  class _ExplicitLiveSccAction(argparse.Action):
+    """Enables live SCC pull and marks it explicit for API preflight."""
+    def __call__(self, _parser, namespace, _values, _option_string=None):
+      setattr(namespace, "fetch_live_scc", True)
+      setattr(namespace, "explicit_fetch_live_scc", True)
+
   parser.add_argument(
       "--fetch-live-scc",
-      action="store_true",
-      help="Query live Cloud SCC API for active IAM findings (degrades gracefully if disabled).",
+      nargs=0,
+      action=_ExplicitLiveSccAction,
+      help="Explicitly require live Cloud SCC API lookup (auto-probed by default with graceful fallback if disabled).",
   )
+  parser.add_argument(
+      "--no-fetch-live-scc",
+      dest="fetch_live_scc",
+      action="store_false",
+      help="Disable automatic live Cloud SCC IAM finding lookup.",
+  )
+  parser.add_argument(
+      "--fetch-live-wiz",
+      dest="fetch_live_wiz",
+      action="store_true",
+      default=True,
+      help="Auto-pull open GCP IAM issues from Wiz GraphQL API when WIZ_CLIENT_ID, WIZ_CLIENT_SECRET, and WIZ_API_URL are set (default: enabled).",
+  )
+  parser.add_argument(
+      "--no-fetch-live-wiz",
+      dest="fetch_live_wiz",
+      action="store_false",
+      help="Disable automatic live Wiz GraphQL API lookup even when Wiz env vars are set.",
+  )
+  parser.set_defaults(fetch_live_scc=True, explicit_fetch_live_scc=False)
   parser.add_argument(
       "--output-dir",
       required=True,

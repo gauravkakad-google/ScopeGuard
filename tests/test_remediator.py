@@ -546,6 +546,79 @@ class TestAttackPathAndCanary(unittest.TestCase):
     tf_readme = (self.out / "terraform" / "README.md").read_text(encoding="utf-8")
     self.assertIn("audit_log_confidence == LOW", tf_readme)
 
+  def test_fetch_live_wiz_returns_empty_without_env_vars(self):
+    from unittest import mock
+    with mock.patch.dict("os.environ", {"WIZ_CLIENT_ID": "", "WIZ_CLIENT_SECRET": "", "WIZ_API_URL": ""}, clear=False):
+      self.assertEqual(REM.fetch_live_wiz_iam_findings(PROJECT), [])
+
+  def test_fetch_live_wiz_parses_iam_issues_and_filters_project(self):
+    import io
+    from unittest import mock
+
+    class _FakeResp:
+      def __init__(self, payload):
+        self._buf = io.BytesIO(json.dumps(payload).encode("utf-8"))
+      def read(self):
+        return self._buf.read()
+      def __enter__(self):
+        return self
+      def __exit__(self, *args):
+        return False
+
+    gql_data = {
+        "data": {
+            "issues": {
+                "nodes": [
+                    {
+                        "id": "wiz-live-1",
+                        "severity": "HIGH",
+                        "control": {"id": "WC-1", "name": "Overprivileged IAM Service Account"},
+                        "entitySnapshot": {
+                            "name": SA,
+                            "type": "SERVICE_ACCOUNT",
+                            "subscriptionExternalId": PROJECT,
+                        },
+                    },
+                    {
+                        "id": "wiz-other-proj",
+                        "severity": "HIGH",
+                        "control": {"id": "WC-2", "name": "IAM Admin Role"},
+                        "entitySnapshot": {
+                            "name": "other-sa",
+                            "type": "SERVICE_ACCOUNT",
+                            "subscriptionExternalId": "other-project",
+                        },
+                    },
+                ]
+            }
+        }
+    }
+    env = {
+        "WIZ_CLIENT_ID": "cid",
+        "WIZ_CLIENT_SECRET": "csec",
+        "WIZ_API_URL": "https://api.us1.app.wiz.io/graphql",
+    }
+    with mock.patch.dict("os.environ", env, clear=False), \
+         mock.patch.object(REM.urllib_request, "urlopen", side_effect=[
+             _FakeResp({"access_token": "tok-123"}),
+             _FakeResp(gql_data),
+         ]):
+      findings = REM.fetch_live_wiz_iam_findings(PROJECT)
+    self.assertEqual(len(findings), 1)
+    self.assertEqual(findings[0]["finding_id"], "wiz-live-1")
+    self.assertEqual(findings[0]["source_platform"], "Wiz")
+
+  def test_fetch_live_wiz_degrades_gracefully_on_http_error(self):
+    from unittest import mock
+    env = {
+        "WIZ_CLIENT_ID": "cid",
+        "WIZ_CLIENT_SECRET": "csec",
+        "WIZ_API_URL": "https://api.us1.app.wiz.io/graphql",
+    }
+    with mock.patch.dict("os.environ", env, clear=False), \
+         mock.patch.object(REM.urllib_request, "urlopen", side_effect=OSError("network down")):
+      self.assertEqual(REM.fetch_live_wiz_iam_findings(PROJECT), [])
+
 
 if __name__ == "__main__":
   unittest.main()
